@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Raw Excel workbooks stay local only - only the generated data/slgl-data.json
+# is committed to the repo (the site only needs that JSON, not the source file).
+source-data/current/
+source-data/archive/
+source-data/.last-processed.json
+*.xlsx
