@@ -8,3 +8,6 @@ source-data/current/
 source-data/archive/
 source-data/.last-processed.json
 *.xlsx
+
+# Deploy token - never commit this
+.github-token
