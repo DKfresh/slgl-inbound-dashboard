@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN_FILE = ROOT / ".github-token"
 REMOTE_URL = "https://github.com/DKfresh/slgl-inbound-dashboard.git"
 GITHUB_USER = "DKfresh"
-SCRATCH_DIR = Path("/tmp/slgl-repo")
+SCRATCH_DIR = Path("/tmp/slgl-deploy-repo")
 
 DEPLOY_PATHS = [
     ".github", ".gitignore", ".nojekyll", "README.md",
@@ -50,6 +50,19 @@ def main():
               f"(Data was still rebuilt locally in {ROOT / 'data/slgl-data.json'}.)")
         return 0
     token = TOKEN_FILE.read_text().strip()
+
+    # The scratch dir can be left over (and unwritable, e.g. owned by a
+    # different sandbox user) from a previous, unrelated container instance.
+    # If so, pick a fresh path instead of fighting it.
+    global SCRATCH_DIR
+    if SCRATCH_DIR.exists() and not (
+        SCRATCH_DIR.is_dir() and
+        __import__("os").access(SCRATCH_DIR, __import__("os").W_OK) and
+        __import__("os").access(SCRATCH_DIR / ".git", __import__("os").W_OK)
+    ):
+        import time
+        SCRATCH_DIR = Path(f"/tmp/slgl-deploy-repo-{int(time.time())}")
+        print(f"Previous scratch dir was stale/unwritable; using {SCRATCH_DIR} instead.")
 
     # Step 3: mirror deployable files into the scratch repo.
     if not (SCRATCH_DIR / ".git").exists():
