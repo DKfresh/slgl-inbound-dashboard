@@ -196,7 +196,7 @@ CONTAINER_DETAILS_REQUIRED = [
     "Destination Estimated Arrival Date", "Origin Actual Departure Date",
     "Shipper", "Freight Carriers", "PO (Shipment Tag)",
     "Master Bill of Lading Number", "House Bill of Lading Numbers",
-    "CAN Rate", "CAN Rate Mod", "NAC/FAK", "FCL / LCL", "Container Product Names",
+    "CAN Rate", "CAN Rate Mod", "NAC/FAK", "FCL / LCL", "Container Volume (CBM)",
 ]
 
 
@@ -239,7 +239,7 @@ def build_all_containers(wb):
             "canRateMod": number(r.get("CAN Rate Mod")),
             "rateType": r.get("NAC/FAK") or "",
             "fclLcl": r.get("FCL / LCL") or "",
-            "productNames": r.get("Container Product Names") or "",
+            "cbm": number(r.get("Container Volume (CBM)")),
         })
     return out
 
@@ -269,71 +269,22 @@ def build_can_rows(all_containers, asof_year):
 
 
 # ---------------------------------------------------------------------------
-# Port status by day (heuristic product-category rollup)
+# Port status by day
 # ---------------------------------------------------------------------------
 
 # "At port" = the 4 destination-port statuses already used for the AT PORT
 # KPI elsewhere in the dashboard (app.js computeDerived()). Keep in sync.
 AT_PORT_STATUSES = {"POD Available", "POD Outgate", "POD Discharge", "Arrived POD"}
 
-# Ordered (most-specific-first) keyword -> furniture category map. The source
-# workbook has no product-category column, only free-text product names
-# (e.g. "Riviera PE Swatch - Hydrangea/White; Wicker Low Back Bench"), so
-# categories are inferred by keyword match against the first product name in
-# that semicolon-separated list. This is a best-effort heuristic, not an
-# authoritative classification.
-PRODUCT_CATEGORY_KEYWORDS = [
-    ("Sectional", ["sectional"]),
-    ("Sofa", ["sofa", "loveseat", "daybed", "chaise"]),
-    ("Armchair", ["armchair"]),
-    ("Chair", ["chair"]),
-    ("Bench", ["bench"]),
-    ("Ottoman", ["ottoman"]),
-    ("Stool", ["stool"]),
-    ("Dining Table", ["dining table"]),
-    ("Coffee Table", ["coffee table"]),
-    ("Side Table", ["side table", "end table"]),
-    ("Table", ["table"]),
-    ("Bed", ["headboard", "bed frame", "daybed"]),
-    ("Nightstand", ["nightstand"]),
-    ("Dresser", ["dresser"]),
-    ("Bookshelf", ["bookshelf", "bookcase"]),
-    ("Cabinet", ["cabinet", "credenza", "console"]),
-    ("Mirror", ["mirror"]),
-    ("Rug", ["rug"]),
-    ("Lighting", ["lamp", "lighting", "chandelier", "sconce"]),
-    ("Pillow", ["pillow", "cushion"]),
-    ("Umbrella", ["umbrella"]),
-    ("Planter", ["planter"]),
-    ("Basket", ["basket"]),
-    ("Bin", [" bin", "bin -"]),
-    ("Tray", ["tray"]),
-    ("Swatch", ["swatch"]),
-    ("Vanity", ["vanity"]),
-    ("Shelf", ["shelf", "shelving"]),
-    ("Desk", ["desk"]),
-]
-
-
-def categorize_product(product_names):
-    """Best-effort furniture category from a raw product-name string."""
-    if not product_names:
-        return "Uncategorized"
-    first = product_names.split(";")[0].strip().lower()
-    for category, keywords in PRODUCT_CATEGORY_KEYWORDS:
-        if any(kw in first for kw in keywords):
-            return category
-    return "Other"
-
 
 def build_port_by_date(all_containers):
     """
     Groups containers currently sitting at the destination port (per
     AT_PORT_STATUSES) by arrival date (actual if known, else estimated),
-    with a per-day furniture-category breakdown. Uses the current workbook
-    snapshot only - there's no stored history of past daily snapshots, so
-    this reflects "as of today" grouped by each container's arrival date,
-    not a day-over-day trend.
+    with per-day totals for container count, cartons, and CBM volume. Uses
+    the current workbook snapshot only - there's no stored history of past
+    daily snapshots, so this reflects "as of today" grouped by each
+    container's arrival date, not a day-over-day trend.
     """
     by_date = {}
     for c in all_containers:
@@ -344,11 +295,10 @@ def build_port_by_date(all_containers):
             date = "Unknown"
         else:
             date = date[:10]
-        category = categorize_product(c["productNames"])
-        bucket = by_date.setdefault(date, {"date": date, "containers": 0, "cartons": 0, "categories": {}})
+        bucket = by_date.setdefault(date, {"date": date, "containers": 0, "cartons": 0, "cbm": 0.0})
         bucket["containers"] += 1
         bucket["cartons"] += c["cartons"] or 0
-        bucket["categories"][category] = bucket["categories"].get(category, 0) + 1
+        bucket["cbm"] += c["cbm"] or 0
 
     return sorted(by_date.values(), key=lambda x: x["date"], reverse=True)
 

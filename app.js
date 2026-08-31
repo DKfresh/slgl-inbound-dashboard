@@ -195,7 +195,7 @@
     "Inbound Status": "Active inbound containers by current operational milestone.",
     "Origin": "Country-level booking and transit performance for weekly business review.",
     "CAN": "Container rate and transit monitoring, isolated until Finance confirms cost definitions.",
-    "Port by Day": "Containers currently at the destination port, grouped by arrival date and product category. Category is inferred from the product-name text — an approximation, not an authoritative classification.",
+    "Port by Day": "Containers currently at the destination port, grouped by arrival date, with cartons and CBM volume.",
     "Shipment Search": "Search container, FLEX-ID, MBL/HBL, PO, vendor, location or origin.",
   };
 
@@ -247,18 +247,15 @@
       var pbd = DATA.portByDate || [];
       var totalAtPort = sum(pbd, function (x) { return x.containers; });
       var totalCartons = sum(pbd, function (x) { return x.cartons; });
-      var allCats = uniq(pbd.reduce(function (acc, x) { return acc.concat(Object.keys(x.categories)); }, []));
-      body += '<div class="scope"><b>Category is inferred, not authoritative</b><span>The source workbook has no product-category column, so categories are guessed from keywords in the product name (e.g. "Chair", "Basket", "Table"). Treat as directional.</span></div>';
+      var totalCbm = sum(pbd, function (x) { return x.cbm; });
       body += '<div class="kpis">' +
         kpiHtml("AT PORT NOW", fmt(totalAtPort), fmt(totalCartons) + " cartons / units", "amber", false) +
+        kpiHtml("TOTAL CBM", fmt(totalCbm), "Volume currently at port", "blue", false) +
         kpiHtml("ARRIVAL DATES", fmt(pbd.length), "Distinct days represented", "blue", false) +
-        kpiHtml("CATEGORIES SEEN", fmt(allCats.length), "Inferred from product names", "blue", false) +
         "</div>";
-      body += '<article class="panel"><div class="ph"><div><span>BY ARRIVAL DATE</span><h2>At-port containers by day and category</h2></div></div><div class="tw"><table><thead><tr><th>Arrival Date</th><th>Containers</th><th>Cartons / Units</th><th>Category breakdown</th></tr></thead><tbody>' +
+      body += '<article class="panel"><div class="ph"><div><span>BY ARRIVAL DATE</span><h2>At-port containers by day</h2></div></div><div class="tw"><table><thead><tr><th>Arrival Date</th><th>Containers</th><th>Cartons / Units</th><th>CBM</th></tr></thead><tbody>' +
         pbd.map(function (x) {
-          var cats = Object.keys(x.categories).sort(function (a, b) { return x.categories[b] - x.categories[a]; })
-            .map(function (c) { return '<span class="pill" style="margin-right:4px">' + esc(c) + ": " + x.categories[c] + "</span>"; }).join("");
-          return "<tr><td><b>" + (x.date === "Unknown" ? "Unknown" : dateFmtFull(x.date)) + "</b></td><td>" + fmt(x.containers) + "</td><td>" + fmt(x.cartons) + "</td><td>" + cats + "</td></tr>";
+          return "<tr><td><b>" + (x.date === "Unknown" ? "Unknown" : dateFmtFull(x.date)) + "</b></td><td>" + fmt(x.containers) + "</td><td>" + fmt(x.cartons) + "</td><td>" + fmt(x.cbm) + "</td></tr>";
         }).join("") +
         "</tbody></table></div></article>";
     } else if (tab === "Shipment Search") {
@@ -307,9 +304,7 @@
           else if (state.tab === "Origin") csvDownload("origin-performance.csv", d.orows.map(function (x) { return { Origin: x.o, Containers: x.n, "Space Confirmed": x.co, "Confirmed %": pct(x.cp), "Containers Departed": x.de, "Departed %": pct(x.dp), "Pending Space": x.pend, "Pending Depart": Math.max(x.n - x.de, 0), "Avg CRD-ETD": x.days, "Active Containers": x.active, "On Water": x.water }; }));
           else if (state.tab === "CAN") csvDownload("can-filtered-underlying.csv", containerCsvRows(d.can));
           else if (state.tab === "Port by Day") csvDownload("port-by-day.csv", (DATA.portByDate || []).map(function (x) {
-            var row = { Date: x.date, Containers: x.containers, Cartons: x.cartons };
-            Object.keys(x.categories).forEach(function (c) { row[c] = x.categories[c]; });
-            return row;
+            return { Date: x.date, Containers: x.containers, Cartons: x.cartons, CBM: x.cbm };
           }));
           else csvDownload("shipment-search-results.csv", containerCsvRows(d.hits));
           return;
