@@ -277,35 +277,42 @@ def build_can_rows(all_containers, asof_year):
 AT_PORT_STATUSES = {"POD Available", "POD Outgate", "POD Discharge", "Arrived POD"}
 
 
-def build_port_by_date(active_containers):
+def build_port_containers(active_containers, asof):
     """
-    Groups containers currently sitting at the destination port (per
-    AT_PORT_STATUSES) by arrival-PORT date (Arrival Port Actual Arrival Date
-    if known, else Arrival Port Estimated Arrival Date), with per-day totals
-    for container count, cartons, and CBM volume.
+    Lists containers currently sitting at the destination port (per
+    AT_PORT_STATUSES) with how many days each has been sitting there since
+    its arrival-PORT date (Arrival Port Actual Arrival Date if known, else
+    Arrival Port Estimated Arrival Date), sorted with the longest-dwelling
+    container first.
 
     Takes activeContainers (shipmentStatusType == "Active"), the same
     population the Summary/Inbound Status "AT PORT" KPI is built from, so
-    the totals here match those KPIs. Uses the current workbook snapshot
-    only - there's no stored history of past daily snapshots, so this
-    reflects "as of today" grouped by each container's arrival-port date,
-    not a day-over-day trend.
+    the total container count here matches that KPI. "Days since arrival"
+    is measured against the workbook's asOf date, not the viewer's clock
+    date, so it stays correct even if someone looks at an older snapshot.
     """
-    by_date = {}
+    asof_date = datetime.strptime(asof, "%Y-%m-%d")
+    out = []
     for c in active_containers:
         if c["status"] not in AT_PORT_STATUSES:
             continue
-        date = c["arrivalAta"] or c["arrivalEta"]
-        if not date:
-            date = "Unknown"
-        else:
-            date = date[:10]
-        bucket = by_date.setdefault(date, {"date": date, "containers": 0, "cartons": 0, "cbm": 0.0})
-        bucket["containers"] += 1
-        bucket["cartons"] += c["cartons"] or 0
-        bucket["cbm"] += c["cbm"] or 0
+        arrival = c["arrivalAta"] or c["arrivalEta"]
+        days_at_port = None
+        if arrival:
+            days_at_port = (asof_date - datetime.strptime(arrival[:10], "%Y-%m-%d")).days
+        out.append({
+            "container": c["container"],
+            "origin": c["origin"],
+            "status": c["status"],
+            "arrivalDate": arrival[:10] if arrival else None,
+            "arrivalIsEstimate": not c["arrivalAta"],
+            "daysAtPort": days_at_port,
+            "cartons": c["cartons"],
+            "cbm": c["cbm"],
+        })
 
-    return sorted(by_date.values(), key=lambda x: x["date"], reverse=True)
+    out.sort(key=lambda x: (x["daysAtPort"] is None, -(x["daysAtPort"] or 0)))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -504,9 +511,10 @@ def main():
     bookings = build_bookings(wb, crd_weeks_in_scope)
     print(f"bookings: {len(bookings)} rows (CRD weeks {sorted(crd_weeks_in_scope)})")
 
-    port_by_date = build_port_by_date(active_containers)
-    print(f"portByDate: {len(port_by_date)} dates, "
-          f"{sum(x['containers'] for x in port_by_date)} at-port containers total")
+    port_containers = build_port_containers(active_containers, asof)
+    oldest = port_containers[0]["daysAtPort"] if port_containers else None
+    print(f"portContainers: {len(port_containers)} at-port containers, "
+          f"oldest dwell {oldest} days")
 
     data = {
         "asOf": asof,
@@ -515,7 +523,7 @@ def main():
         "canRows": can_rows,
         "originDashboard": origin_dashboard,
         "allContainers": all_containers,
-        "portByDate": port_by_date,
+        "portContainers": port_containers,
     }
     TARGET.write_text(json.dumps(data, separators=(",", ":")))
     print(f"Wrote {TARGET}")
