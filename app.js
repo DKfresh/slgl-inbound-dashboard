@@ -253,7 +253,7 @@
         kpiHtml("TOTAL CBM", fmt(totalCbm), "Volume currently at port", "blue", false) +
         kpiHtml("ARRIVAL DATES", fmt(pbd.length), "Distinct days represented", "blue", false) +
         "</div>";
-      body += '<article class="panel"><div class="ph"><div><span>BY ARRIVAL DATE</span><h2>At-port containers by day</h2></div></div><div class="tw"><table><thead><tr><th>Arrival Date</th><th>Containers</th><th>Cartons / Units</th><th>CBM</th></tr></thead><tbody>' +
+      body += '<article class="panel"><div class="ph"><div><span>BY ARRIVAL DATE</span><h2>At-port containers by day</h2></div></div><div class="tw"><table><thead><tr><th>Port Arrival Date</th><th>Containers</th><th>Cartons / Units</th><th>CBM</th></tr></thead><tbody>' +
         pbd.map(function (x) {
           return "<tr><td><b>" + (x.date === "Unknown" ? "Unknown" : dateFmtFull(x.date)) + "</b></td><td>" + fmt(x.containers) + "</td><td>" + fmt(x.cartons) + "</td><td>" + fmt(x.cbm) + "</td></tr>";
         }).join("") +

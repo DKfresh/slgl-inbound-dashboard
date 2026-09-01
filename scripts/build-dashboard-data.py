@@ -277,17 +277,22 @@ def build_can_rows(all_containers, asof_year):
 AT_PORT_STATUSES = {"POD Available", "POD Outgate", "POD Discharge", "Arrived POD"}
 
 
-def build_port_by_date(all_containers):
+def build_port_by_date(active_containers):
     """
     Groups containers currently sitting at the destination port (per
-    AT_PORT_STATUSES) by arrival date (actual if known, else estimated),
-    with per-day totals for container count, cartons, and CBM volume. Uses
-    the current workbook snapshot only - there's no stored history of past
-    daily snapshots, so this reflects "as of today" grouped by each
-    container's arrival date, not a day-over-day trend.
+    AT_PORT_STATUSES) by arrival-PORT date (Arrival Port Actual Arrival Date
+    if known, else Arrival Port Estimated Arrival Date), with per-day totals
+    for container count, cartons, and CBM volume.
+
+    Takes activeContainers (shipmentStatusType == "Active"), the same
+    population the Summary/Inbound Status "AT PORT" KPI is built from, so
+    the totals here match those KPIs. Uses the current workbook snapshot
+    only - there's no stored history of past daily snapshots, so this
+    reflects "as of today" grouped by each container's arrival-port date,
+    not a day-over-day trend.
     """
     by_date = {}
-    for c in all_containers:
+    for c in active_containers:
         if c["status"] not in AT_PORT_STATUSES:
             continue
         date = c["arrivalAta"] or c["arrivalEta"]
@@ -499,7 +504,7 @@ def main():
     bookings = build_bookings(wb, crd_weeks_in_scope)
     print(f"bookings: {len(bookings)} rows (CRD weeks {sorted(crd_weeks_in_scope)})")
 
-    port_by_date = build_port_by_date(all_containers)
+    port_by_date = build_port_by_date(active_containers)
     print(f"portByDate: {len(port_by_date)} dates, "
           f"{sum(x['containers'] for x in port_by_date)} at-port containers total")
 
