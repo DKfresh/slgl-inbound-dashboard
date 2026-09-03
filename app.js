@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var tabs = ["Summary", "Bookings", "Inbound Status", "Origin", "CAN", "Port Aging", "Shipment Search"];
+  var tabs = ["Summary", "Bookings", "Inbound Status", "Origin", "Port Aging", "Shipment Search"];
 
   var fmt = function (n) { return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n || 0); };
   var pct = function (n) { return Math.round((n || 0) * 100) + "%"; };
@@ -110,9 +110,6 @@
       var t = x.total;
       return { o: x.origin, n: t.containerCount, co: t.spaceConfirmed, de: t.containersDeparted, pend: t.pendingSpace, cp: t.confirmedPct, dp: t.departedPct, days: t.avgDays, active: c.length, water: c.filter(function (y) { return y.status === "On Water"; }).length };
     });
-    var can = d.canRows.filter(function (x) {
-      return (origin === "All" || x.origin === origin) && (status === "All" || x.status === status) && (rate === "All" || x.rateType === rate);
-    });
     var searchBase = d.allContainers.filter(function (x) { return state.searchScope === "All" || lifecycle(x) === state.searchScope; });
     var q = state.q.trim().toLowerCase();
     var hits = q ? searchBase.filter(function (x) {
@@ -121,7 +118,7 @@
       });
     }).slice(0, 500) : [];
 
-    return { origins: origins, weeks: weeks, dests: dests, containers: containers, onWater: onWater, port: port, statMix: statMix, allOrigin: allOrigin, selectedOrigin: selectedOrigin, orows: orows, can: can, searchBase: searchBase, hits: hits };
+    return { origins: origins, weeks: weeks, dests: dests, containers: containers, onWater: onWater, port: port, statMix: statMix, allOrigin: allOrigin, selectedOrigin: selectedOrigin, orows: orows, searchBase: searchBase, hits: hits };
   }
 
   function originCsvRows(o, week) {
@@ -143,12 +140,7 @@
       h += selHtml("Booking Status", state.bs, uniq(DATA.bookings.map(function (x) { return x.status; })), "bs");
     }
     if (state.tab !== "Bookings") {
-      h += selHtml("Status", state.status, uniq((state.tab === "CAN" ? DATA.canRows : DATA.activeContainers).map(function (x) { return x.status; })), "status");
-    }
-    if (state.tab === "CAN") {
-      h += selHtml("Rate Type", state.rate, uniq(DATA.canRows.map(function (x) { return x.rateType; })), "rate");
-    }
-    if (state.tab !== "CAN") {
+      h += selHtml("Status", state.status, uniq(DATA.activeContainers.map(function (x) { return x.status; })), "status");
       h += selHtml("Destination", state.dest, d.dests, "dest");
     }
     h += "</div>";
@@ -194,7 +186,6 @@
     "Bookings": "All Origins Bookings Status — cargo readiness, confirmation and departure execution.",
     "Inbound Status": "Active inbound containers by current operational milestone.",
     "Origin": "Country-level booking and transit performance for weekly business review.",
-    "CAN": "Container rate and transit monitoring, isolated until Finance confirms cost definitions.",
     "Port Aging": "Containers currently sitting at the destination port, ranked by how many days each has been there since arrival — oldest first.",
     "Shipment Search": "Search container, FLEX-ID, MBL/HBL, PO, vendor, location or origin.",
   };
@@ -234,18 +225,6 @@
         return '<button data-action="gotoOrigin" data-origin="' + esc(x.o) + '"><span>' + esc(x.o) + "</span><strong>" + fmt(x.n) + "</strong><small>containers</small><div><b>" + pct(x.cp) + "</b> confirmed</div><div><b>" + (x.days ? x.days.toFixed(1) : "—") + "d</b> CRD–ETD</div><i style=\"width:" + pct(x.cp) + '"></i></button>';
       }).join("") + "</div>";
       body += originDetailTableHtml(d.orows);
-    } else if (tab === "CAN") {
-      body += '<div class="scope"><b>Cost scope is provisional</b><span>CAN rate is isolated from Summary until Finance/AP confirms rate definitions and LCL treatment.</span></div>';
-      body += filtersHtml(d);
-      body += '<div class="kpis">' +
-        kpiHtml("FCL CONTAINERS", fmt(d.can.length), "GDC · " + DATA.asOf.slice(0, 4) + " arrivals", "blue", false) +
-        kpiHtml("AVG CAN RATE", money(sum(d.can, function (x) { return x.canRate; }) / Math.max(d.can.length, 1)), "Source workbook rate", "green", false) +
-        kpiHtml("AVG TRANSIT", (sum(d.can, function (x) { return x.daysTransit; }) / Math.max(d.can.length, 1)).toFixed(1) + "d", "Origin to destination", "blue", false) +
-        kpiHtml("RATE > $6K", fmt(d.can.filter(function (x) { return x.canRate > 6000; }).length), "Review after settlement", "amber", false) +
-        "</div>";
-      body += '<article class="panel"><div class="ph"><div><span>FILTERED CAN DETAIL</span><h2>Container rate review</h2></div></div><div class="tw"><table><thead><tr><th>Container</th><th>Origin</th><th>Rate Type</th><th>Status</th><th>Arrival</th><th>CAN Rate</th><th>Transit</th></tr></thead><tbody>' +
-        d.can.slice(0, 100).map(function (x) { return "<tr><td><b>" + esc(x.container) + "</b></td><td>" + esc(x.origin) + "</td><td>" + esc(x.rateType) + "</td><td>" + pillHtml(x.status) + "</td><td>" + dateFmt(x.arrivalAta || x.arrivalEta) + "</td><td>" + money(x.canRate) + "</td><td>" + x.daysTransit + "d</td></tr>"; }).join("") +
-        "</tbody></table></div></article>";
     } else if (tab === "Port Aging") {
       var pc = DATA.portContainers || [];
       var totalCartons = sum(pc, function (x) { return x.cartons; });
@@ -306,7 +285,6 @@
           else if (state.tab === "Bookings") csvDownload("bookings-" + d.selectedOrigin.origin.toLowerCase().replace(/ /g, "-") + ".csv", originCsvRows(d.selectedOrigin, state.week));
           else if (state.tab === "Inbound Status") csvDownload("inbound-status-filtered.csv", containerCsvRows(d.containers));
           else if (state.tab === "Origin") csvDownload("origin-performance.csv", d.orows.map(function (x) { return { Origin: x.o, Containers: x.n, "Space Confirmed": x.co, "Confirmed %": pct(x.cp), "Containers Departed": x.de, "Departed %": pct(x.dp), "Pending Space": x.pend, "Pending Depart": Math.max(x.n - x.de, 0), "Avg CRD-ETD": x.days, "Active Containers": x.active, "On Water": x.water }; }));
-          else if (state.tab === "CAN") csvDownload("can-filtered-underlying.csv", containerCsvRows(d.can));
           else if (state.tab === "Port Aging") csvDownload("port-aging.csv", (DATA.portContainers || []).map(function (x) {
             return { Container: x.container, Origin: x.origin, Status: x.status, "Port Arrival": x.arrivalDate, "Estimate Only": x.arrivalIsEstimate, "Days At Port": x.daysAtPort, Cartons: x.cartons, CBM: x.cbm };
           }));
