@@ -203,7 +203,10 @@
     var d = computeDerived();
     var tab = state.tab;
     var body = "";
-    body += '<div class="title"><div><span>OPERATIONS / ' + tab.toUpperCase() + "</span><h1>" + esc(tab) + "</h1><p>" + esc(tabIntro[tab]) + '</p></div><div class="titleActions"><button class="download" data-action="downloadCurrent">↓ Download Current View</button><button data-action="print">Print / PDF</button></div></div>';
+    var sigmaLink = tab === "Summary"
+      ? '<a class="download" href="https://app.sigmacomputing.com/serenaandlily/workbook/SLGL-Ops-Dashboard-6G7VTGgQ5kV1jAxI8dxPCI/edit?:nodeId=Ka-_vcCweE" target="_blank" rel="noopener">Sigma Daily View ↗</a>'
+      : "";
+    body += '<div class="title"><div><span>OPERATIONS / ' + tab.toUpperCase() + "</span><h1>" + esc(tab) + "</h1><p>" + esc(tabIntro[tab]) + '</p></div><div class="titleActions">' + sigmaLink + '<button class="download" data-action="downloadCurrent">↓ Download Current View</button><button data-action="print">Print / PDF</button></div></div>';
 
     if (tab === "Summary") {
       body += kpisHtml(d);
