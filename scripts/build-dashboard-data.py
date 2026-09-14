@@ -200,6 +200,19 @@ CONTAINER_DETAILS_REQUIRED = [
 ]
 
 
+# Any "days" figure with a magnitude beyond this is treated as a source-data
+# error (typically a blank date turning into an Excel-epoch subtraction,
+# e.g. one row was observed with Days Transit = -46273) rather than a real
+# transit time, and is dropped to None so it doesn't skew averages.
+DAYS_SANITY_LIMIT = 500
+
+
+def sane_days(v):
+    if v is None:
+        return None
+    return v if abs(v) <= DAYS_SANITY_LIMIT else None
+
+
 def build_all_containers(wb):
     rows = wb.table("Container Details", CONTAINER_DETAILS_REQUIRED)
     out = []
@@ -223,9 +236,9 @@ def build_all_containers(wb):
             "containerLocation": r.get("Container Location") or "",
             "cartons": number(r.get("Ctns")),
             "utilization": number(r.get("Container Utilization")),
-            "daysTransit": number(r.get("Days Transit")),
-            "daysOut": number(r.get("Days\nOut")),
-            "daysAtDc": number(r.get("Days at DC")),
+            "daysTransit": sane_days(number(r.get("Days Transit"))),
+            "daysOut": sane_days(number(r.get("Days\nOut"))),
+            "daysAtDc": sane_days(number(r.get("Days at DC"))),
             "arrivalEta": excel_day(r.get("Arrival Port Estimated Arrival Date")),
             "arrivalAta": excel_day(r.get("Arrival Port Actual Arrival Date")),
             "destinationEta": excel_day(r.get("Destination Estimated Arrival Date")),
@@ -249,7 +262,43 @@ def build_all_containers(wb):
 # ---------------------------------------------------------------------------
 
 def build_active_containers(all_containers):
-    return [c for c in all_containers if c["shipmentStatusType"] == "Active"]
+    """
+    Active-lifecycle containers, deduplicated by physical container number.
+
+    LCL (consolidated) shipments have one Container Details row per booking/PO
+    sharing a container, not one row per physical container - the same
+    container number can repeat dozens of times. Counting rows there
+    overstates the container count (e.g. one observed container had 16 LCL
+    booking rows). This collapses those down to one entry per container,
+    summing cartons across its bookings and keeping the other descriptive
+    fields from the first row (they're normally consistent across a
+    container's own booking rows).
+    """
+    active = [c for c in all_containers if c["shipmentStatusType"] == "Active"]
+
+    by_container = {}
+    order = []
+    for c in active:
+        key = c["container"]
+        if key not in by_container:
+            by_container[key] = []
+            order.append(key)
+        by_container[key].append(c)
+
+    out = []
+    for key in order:
+        rows = by_container[key]
+        # Prefer the FCL "master" row as the representative one when a
+        # container has both an FCL row and LCL child-booking rows for it -
+        # the FCL row carries the real operational status (On Water, At POL,
+        # etc.), while LCL child rows are just labeled "LCL" regardless of
+        # where the container actually is.
+        fcl_rows = [r for r in rows if r["fclLcl"] == "FCL"]
+        base = dict(fcl_rows[0]) if fcl_rows else dict(rows[0])
+        base["cartons"] = sum(r["cartons"] or 0 for r in rows)
+        base["lineItems"] = len(rows)
+        out.append(base)
+    return out
 
 
 def build_can_rows(all_containers, asof_year):
