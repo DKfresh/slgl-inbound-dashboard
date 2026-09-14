@@ -6,12 +6,8 @@
 
   var tabs = ["Summary", "Bookings", "Inbound Status", "Origin", "Port Aging", "Shipment Search"];
 
-  // Granular position, from the "Shipment Status" column - more reliable
-  // than the coarser "Status" helper column (which can lag, e.g. some
-  // containers show Status="Delivered" while Shipment Status correctly
-  // still shows them sitting At Arrival Port, not yet actually delivered).
-  var ON_WATER_SHIPMENT_STATUSES = ["In Transit to Arrival Port", "At Intermediary Port", "In Transit to Intermediary Port"];
-  var AT_PORT_SHIPMENT_STATUSES = ["At Arrival Port"];
+  // Column-A "Status" values that mean "sitting at the destination port".
+  var AT_PORT_STATUSES = ["POD Available", "POD Outgate", "POD Discharge", "Arrived POD"];
 
   var fmt = function (n) { return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n || 0); };
   var pct = function (n) { return Math.round((n || 0) * 100) + "%"; };
@@ -56,6 +52,7 @@
   var state = {
     tab: "Summary", q: "", searchScope: "All",
     origin: "All", week: "All", bs: "All", dest: "All", status: "All", rate: "All",
+    shipmentStatusDetail: [],
     swkDest: "GDC", swkFcl: "All",
   };
 
@@ -64,9 +61,9 @@
 
   function pillClass(s) {
     s = s || "";
-    if (s.indexOf("Stop-Off") >= 0) return "warn";
-    if (s.indexOf("In Transit") >= 0) return "move";
-    if (s.indexOf("Arrival Port") >= 0 || s.indexOf("Intermediary Port") >= 0 || s.indexOf("Departure Port") >= 0) return "port";
+    if (s.indexOf("Pending") >= 0) return "warn";
+    if (s.indexOf("Water") >= 0 || s.indexOf("Depart") >= 0) return "move";
+    if (s.indexOf("POD") >= 0 || s.indexOf("Port") >= 0) return "port";
     return "";
   }
   function pillHtml(s) { return '<span class="pill ' + pillClass(s) + '">' + esc(s || "Unknown") + "</span>"; }
@@ -87,6 +84,17 @@
     return html;
   }
 
+  // Multi-select slicer (checkbox list). Empty selection means "All".
+  function selHtmlMulti(label, selected, options, name) {
+    var html = '<label class="filter"><span>' + esc(label) + (selected.length ? " (" + selected.length + ")" : "") + '</span><div class="multiSelect" data-filter-multi="' + name + '">';
+    html += options.map(function (o) {
+      var checked = selected.indexOf(o) >= 0 ? " checked" : "";
+      return '<label><input type="checkbox" value="' + esc(o) + '"' + checked + "> " + esc(o) + "</label>";
+    }).join("");
+    html += "</div></label>";
+    return html;
+  }
+
   function barsHtml(rows) {
     var m = Math.max.apply(null, rows.map(function (x) { return x.value; }).concat([1]));
     return '<div class="bars">' + rows.map(function (x) {
@@ -103,20 +111,22 @@
     var weeks = uniq(d.bookings.map(function (x) { return String(x.crdWeek); }));
     var dests = uniq(d.bookings.map(function (x) { return x.destination; }).concat(d.activeContainers.map(function (x) { return x.destination; })));
 
+    var ssDetail = state.shipmentStatusDetail || [];
     var containers = d.activeContainers.filter(function (x) {
-      return (origin === "All" || x.origin === origin) && (status === "All" || x.shipmentStatus === status) && (dest === "All" || x.destination === dest);
+      return (origin === "All" || x.origin === origin) && (status === "All" || x.status === status) && (dest === "All" || x.destination === dest) &&
+        (ssDetail.length === 0 || ssDetail.indexOf(x.shipmentStatus) >= 0);
     });
-    var onWater = containers.filter(function (x) { return ON_WATER_SHIPMENT_STATUSES.indexOf(x.shipmentStatus) >= 0; });
-    var port = containers.filter(function (x) { return AT_PORT_SHIPMENT_STATUSES.indexOf(x.shipmentStatus) >= 0; });
-    var statMix = uniq(containers.map(function (x) { return x.shipmentStatus; })).map(function (s) {
-      return { label: s, value: containers.filter(function (x) { return x.shipmentStatus === s; }).length, sub: fmt(sum(containers.filter(function (x) { return x.shipmentStatus === s; }), function (x) { return x.cartons; })) + " cartons / units" };
+    var onWater = containers.filter(function (x) { return x.status === "On Water"; });
+    var port = containers.filter(function (x) { return AT_PORT_STATUSES.indexOf(x.status) >= 0; });
+    var statMix = uniq(containers.map(function (x) { return x.status; })).map(function (s) {
+      return { label: s, value: containers.filter(function (x) { return x.status === s; }).length, sub: fmt(sum(containers.filter(function (x) { return x.status === s; }), function (x) { return x.cartons; })) + " cartons / units" };
     }).sort(function (a, b) { return b.value - a.value; });
     var allOrigin = d.originDashboard.filter(function (x) { return x.origin === "All Origins"; })[0];
     var selectedOrigin = d.originDashboard.filter(function (x) { return x.origin === (origin === "All" ? "All Origins" : origin); })[0] || allOrigin;
     var orows = d.originDashboard.filter(function (x) { return x.origin !== "All Origins"; }).map(function (x) {
       var c = d.activeContainers.filter(function (y) { return y.origin === x.origin; });
       var t = x.total;
-      return { o: x.origin, n: t.containerCount, co: t.spaceConfirmed, de: t.containersDeparted, pend: t.pendingSpace, cp: t.confirmedPct, dp: t.departedPct, days: t.avgDays, active: c.length, water: c.filter(function (y) { return ON_WATER_SHIPMENT_STATUSES.indexOf(y.shipmentStatus) >= 0; }).length };
+      return { o: x.origin, n: t.containerCount, co: t.spaceConfirmed, de: t.containersDeparted, pend: t.pendingSpace, cp: t.confirmedPct, dp: t.departedPct, days: t.avgDays, active: c.length, water: c.filter(function (y) { return y.status === "On Water"; }).length };
     });
     var searchBase = d.allContainers.filter(function (x) { return state.searchScope === "All" || lifecycle(x) === state.searchScope; });
     var q = state.q.trim().toLowerCase();
@@ -137,7 +147,7 @@
   }
   function containerCsvRows(rows) {
     return rows.map(function (x) {
-      return { Container: x.container, "FLEX-ID": x.flexId, Status: x.shipmentStatus, "Status (Legacy)": x.status, Origin: x.origin, POL: x.pol, POD: x.pod, POA: x.poa, Destination: x.destination, "Arrival ETA": x.arrivalEta, "Arrival ATA": x.arrivalAta, "Destination ETA": x.destinationEta, "Origin ATD": x.originAtd, Cartons: x.cartons, "Container Size": x.containerSize, "Current Location": x.containerLocation, Shipper: x.shipper, Carrier: x.carrier, PO: x.po, MBL: x.mbl, HBL: x.hbl, "CAN Rate": x.canRate, "Rate Type": x.rateType, "Transit Days": x.daysTransit };
+      return { Container: x.container, "FLEX-ID": x.flexId, Status: x.status, "Shipment Status": x.shipmentStatus, Origin: x.origin, POL: x.pol, POD: x.pod, POA: x.poa, Destination: x.destination, "Arrival ETA": x.arrivalEta, "Arrival ATA": x.arrivalAta, "Destination ETA": x.destinationEta, "Origin ATD": x.originAtd, Cartons: x.cartons, "Container Size": x.containerSize, "Current Location": x.containerLocation, Shipper: x.shipper, Carrier: x.carrier, PO: x.po, MBL: x.mbl, HBL: x.hbl, "CAN Rate": x.canRate, "Rate Type": x.rateType, "Transit Days": x.daysTransit };
     });
   }
 
@@ -148,8 +158,11 @@
       h += selHtml("Booking Status", state.bs, uniq(DATA.bookings.map(function (x) { return x.status; })), "bs");
     }
     if (state.tab !== "Bookings") {
-      h += selHtml("Status", state.status, uniq(DATA.activeContainers.map(function (x) { return x.shipmentStatus; })), "status");
+      h += selHtml("Status", state.status, uniq(DATA.activeContainers.map(function (x) { return x.status; })), "status");
       h += selHtml("Destination", state.dest, d.dests, "dest");
+    }
+    if (state.tab === "Inbound Status") {
+      h += selHtmlMulti("Shipment Status Detail", state.shipmentStatusDetail || [], uniq(DATA.activeContainers.map(function (x) { return x.shipmentStatus; })), "shipmentStatusDetail");
     }
     h += "</div>";
     return h;
@@ -279,7 +292,7 @@
         "</div>";
       var nextArrivals = d.containers.filter(function (x) { return x.arrivalEta; }).sort(function (a, b) { return (a.arrivalEta || "").localeCompare(b.arrivalEta || ""); }).slice(0, 15);
       body += '<div class="grid"><article class="panel"><div class="ph"><div><span>CONTAINER + UNIT VOLUME</span><h2>Inbound Status</h2></div></div>' + barsHtml(d.statMix) + '</article><article class="panel"><div class="ph"><div><span>NEXT ARRIVALS</span><h2>Arrival Port ETA</h2></div></div><div class="tw"><table><thead><tr><th>Container</th><th>Status</th><th>Origin</th><th>ETA</th><th>Units</th></tr></thead><tbody>' +
-        nextArrivals.map(function (x) { return "<tr><td><b>" + esc(x.container) + "</b></td><td>" + pillHtml(x.shipmentStatus) + "</td><td>" + esc(x.origin) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td>" + fmt(x.cartons) + "</td></tr>"; }).join("") +
+        nextArrivals.map(function (x) { return "<tr><td><b>" + esc(x.container) + "</b></td><td>" + pillHtml(x.status) + "</td><td>" + esc(x.origin) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td>" + fmt(x.cartons) + "</td></tr>"; }).join("") +
         "</tbody></table></div></article></div>";
       body += statusByWeekHtml();
     } else if (tab === "Origin") {
@@ -312,7 +325,7 @@
       if (state.q.trim()) {
         body += '<article class="panel"><div class="ph"><div><span>' + d.hits.length + ' MATCHES</span><h2>Search results</h2></div></div><div class="tw"><table><thead><tr><th>Container / FLEX-ID</th><th>Status</th><th>Lane</th><th>ETA</th><th>PO / MBL</th><th>Shipper</th><th>Units</th></tr></thead><tbody>' +
           d.hits.map(function (x) {
-            return "<tr><td><b>" + esc(x.container) + "</b><small>" + esc(x.flexId) + "</small></td><td>" + pillHtml(x.shipmentStatus) + "<small>" + esc(lifecycle(x)) + " · " + esc(x.status) + "</small></td><td>" + esc(x.origin) + " → " + esc(x.destination) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td><b>" + esc(x.po || "—") + "</b><small>" + esc(x.mbl) + "</small></td><td>" + esc(x.shipper || "—") + "</td><td>" + fmt(x.cartons) + "</td></tr>";
+            return "<tr><td><b>" + esc(x.container) + "</b><small>" + esc(x.flexId) + "</small></td><td>" + pillHtml(x.status) + "<small>" + esc(lifecycle(x)) + " · " + esc(x.shipmentStatus) + "</small></td><td>" + esc(x.origin) + " → " + esc(x.destination) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td><b>" + esc(x.po || "—") + "</b><small>" + esc(x.mbl) + "</small></td><td>" + esc(x.shipper || "—") + "</td><td>" + fmt(x.cartons) + "</td></tr>";
           }).join("") +
           "</tbody></table></div></article>";
       }
@@ -326,6 +339,16 @@
     var content = root.querySelector(".content");
     content.querySelectorAll("[data-filter]").forEach(function (el) {
       el.addEventListener("change", function () { state[el.getAttribute("data-filter")] = el.value; render(); });
+    });
+    content.querySelectorAll("[data-filter-multi]").forEach(function (box) {
+      var name = box.getAttribute("data-filter-multi");
+      box.querySelectorAll("input[type=checkbox]").forEach(function (cb) {
+        cb.addEventListener("change", function () {
+          var checked = Array.from(box.querySelectorAll("input[type=checkbox]:checked")).map(function (c) { return c.value; });
+          state[name] = checked;
+          render();
+        });
+      });
     });
     content.querySelectorAll("[data-input='q']").forEach(function (el) {
       el.addEventListener("input", function () { state.q = el.value; render(); });

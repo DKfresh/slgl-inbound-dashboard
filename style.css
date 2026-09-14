@@ -62,6 +62,9 @@ aside nav button:hover, aside nav button.active { background: rgba(232,239,244,.
 .filters { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
 .filter { display: flex; flex-direction: column; gap: 4px; font-size: 9px; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; }
 .filter select { font: 600 12px Arial, sans-serif; text-transform: none; letter-spacing: 0; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 8px 9px; min-width: 140px; }
+.multiSelect { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); background: #fff; padding: 8px 10px; min-width: 220px; max-height: 140px; overflow-y: auto; }
+.multiSelect label { display: flex; align-items: center; gap: 6px; font: 600 11.5px Arial, sans-serif; text-transform: none; letter-spacing: 0; color: var(--ink); cursor: pointer; }
+.multiSelect input { margin: 0; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .panel { background: #fff; border: 1px solid var(--line); padding: 0 0 16px; margin-bottom: 16px; }
