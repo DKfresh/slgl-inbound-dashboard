@@ -197,6 +197,7 @@ CONTAINER_DETAILS_REQUIRED = [
     "Shipper", "Freight Carriers", "PO (Shipment Tag)",
     "Master Bill of Lading Number", "House Bill of Lading Numbers",
     "CAN Rate", "CAN Rate Mod", "NAC/FAK", "FCL / LCL", "Container Volume (CBM)",
+    "No Roll DC Wk",
 ]
 
 
@@ -253,6 +254,7 @@ def build_all_containers(wb):
             "rateType": r.get("NAC/FAK") or "",
             "fclLcl": r.get("FCL / LCL") or "",
             "cbm": number(r.get("Container Volume (CBM)")),
+            "dcWeek": r.get("No Roll DC Wk") or "",
         })
     return out
 
@@ -362,6 +364,49 @@ def build_port_containers(active_containers, asof):
 
     out.sort(key=lambda x: (x["daysAtPort"] is None, -(x["daysAtPort"] or 0)))
     return out
+
+
+# ---------------------------------------------------------------------------
+# GDC status-by-week (replicates the "Ct CANs" pivot on the Inbound Status
+# sheet: Rows = Status, Columns = No Roll DC Wk, filtered to DEST = GDC)
+# ---------------------------------------------------------------------------
+
+GDC_STATUS_WEEK_STATUSES = ["Delivered", "POD Available", "Arrived POD", "On Water"]
+
+
+def _week_sort_key(wk):
+    try:
+        m, d = wk.split(".")
+        return (int(m), int(d))
+    except (ValueError, AttributeError):
+        return (99, 99)
+
+
+def build_gdc_status_by_week(all_containers):
+    """
+    Reproduces the source workbook's own "Ct CANs" pivot on the Inbound
+    Status sheet: containers destined for GDC, counted by Status and bucketed
+    into columns by their "No Roll DC Wk" week label. Uses all_containers
+    (not just active ones) because that pivot includes historical Delivered
+    counts too - matching it means matching its scope, not our own active
+    definition.
+    """
+    gdc = [c for c in all_containers if c["destination"] == "GDC" and c["status"] in GDC_STATUS_WEEK_STATUSES]
+
+    weeks = sorted({c["dcWeek"] for c in gdc if c["dcWeek"]}, key=_week_sort_key)
+    rows = []
+    for status in GDC_STATUS_WEEK_STATUSES:
+        status_rows = [c for c in gdc if c["status"] == status]
+        counts = {}
+        for wk in weeks:
+            n = sum(1 for c in status_rows if c["dcWeek"] == wk)
+            if n:
+                counts[wk] = n
+        rows.append({"status": status, "total": len(status_rows), "counts": counts})
+
+    week_totals = {wk: sum(r["counts"].get(wk, 0) for r in rows) for wk in weeks}
+    grand_total = sum(r["total"] for r in rows)
+    return {"weeks": weeks, "rows": rows, "weekTotals": week_totals, "grandTotal": grand_total}
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +605,10 @@ def main():
     bookings = build_bookings(wb, crd_weeks_in_scope)
     print(f"bookings: {len(bookings)} rows (CRD weeks {sorted(crd_weeks_in_scope)})")
 
+    gdc_status_by_week = build_gdc_status_by_week(all_containers)
+    print(f"gdcStatusByWeek: {gdc_status_by_week['grandTotal']} rows across "
+          f"{len(gdc_status_by_week['weeks'])} weeks (GDC destination)")
+
     port_containers = build_port_containers(active_containers, asof)
     oldest = port_containers[0]["daysAtPort"] if port_containers else None
     print(f"portContainers: {len(port_containers)} at-port containers, "
@@ -573,6 +622,7 @@ def main():
         "originDashboard": origin_dashboard,
         "allContainers": all_containers,
         "portContainers": port_containers,
+        "gdcStatusByWeek": gdc_status_by_week,
     }
     TARGET.write_text(json.dumps(data, separators=(",", ":")))
     print(f"Wrote {TARGET}")

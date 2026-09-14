@@ -174,6 +174,20 @@
     }).join("");
     return '<article class="panel"><div class="ph"><div><span>ORIGIN DASHBOARD REPLICA</span><h2>All Origins Bookings Status</h2></div></div><div class="tw"><table><thead><tr><th>Origin</th><th>Containers</th><th>Confirmed %</th><th>Departed %</th><th>Confirmed</th><th>Departed</th><th>Pending Space</th><th>Pending Depart</th><th>Avg CRD–ETD</th></tr></thead><tbody>' + body + "</tbody></table></div></article>";
   }
+  function gdcStatusByWeekHtml() {
+    var g = DATA.gdcStatusByWeek;
+    if (!g || !g.rows.length) return "";
+    var head = "<th>Status</th>" + g.weeks.map(function (w) { return "<th>" + esc(w) + "</th>"; }).join("") + "<th>Total</th>";
+    var body = g.rows.map(function (r) {
+      var cells = g.weeks.map(function (w) { return "<td>" + (r.counts[w] ? fmt(r.counts[w]) : "") + "</td>"; }).join("");
+      return "<tr><td><b>" + esc(r.status) + "</b></td>" + cells + "<td><b>" + fmt(r.total) + "</b></td></tr>";
+    }).join("");
+    var totalRow = "<tr class=\"total\"><td><b>Total</b></td>" +
+      g.weeks.map(function (w) { return "<td>" + fmt(g.weekTotals[w] || 0) + "</td>"; }).join("") +
+      "<td><b>" + fmt(g.grandTotal) + "</b></td></tr>";
+    return '<article class="panel weekly"><div class="ph"><div><span>GDC DESTINATION · SOURCE WORKBOOK PIVOT</span><h2>GDC status by week (No Roll DC Wk)</h2></div></div><div class="tw"><table><thead><tr>' + head + "</tr></thead><tbody>" + body + totalRow + "</tbody></table></div></article>";
+  }
+
   function originDetailTableHtml(rows) {
     var body = rows.map(function (x) {
       return '<tr><td><b>' + esc(x.o) + "</b></td><td>" + fmt(x.n) + "</td><td>" + fmt(x.active) + "</td><td>" + fmt(x.water) + '</td><td><span class="meter"><i style="width:' + pct(x.cp) + '"></i></span><b>' + pct(x.cp) + "</b></td><td>" + pct(x.dp) + "</td><td>" + fmt(x.co) + "</td><td>" + fmt(x.de) + '</td><td class="' + (x.pend ? "bad" : "") + '">' + fmt(x.pend) + "</td><td>" + fmt(Math.max(x.n - x.de, 0)) + "</td><td>" + (x.days ? x.days.toFixed(1) + " days" : "—") + "</td></tr>";
@@ -219,6 +233,7 @@
       body += '<div class="grid"><article class="panel"><div class="ph"><div><span>CONTAINER + UNIT VOLUME</span><h2>Inbound Status</h2></div></div>' + barsHtml(d.statMix) + '</article><article class="panel"><div class="ph"><div><span>NEXT ARRIVALS</span><h2>Arrival Port ETA</h2></div></div><div class="tw"><table><thead><tr><th>Container</th><th>Status</th><th>Origin</th><th>ETA</th><th>Units</th></tr></thead><tbody>' +
         nextArrivals.map(function (x) { return "<tr><td><b>" + esc(x.container) + "</b></td><td>" + pillHtml(x.status) + "</td><td>" + esc(x.origin) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td>" + fmt(x.cartons) + "</td></tr>"; }).join("") +
         "</tbody></table></div></article></div>";
+      body += gdcStatusByWeekHtml();
     } else if (tab === "Origin") {
       body += filtersHtml(d);
       body += '<div class="originCards">' + d.orows.map(function (x) {
