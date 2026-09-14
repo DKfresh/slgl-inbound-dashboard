@@ -56,6 +56,7 @@
   var state = {
     tab: "Summary", q: "", searchScope: "All",
     origin: "All", week: "All", bs: "All", dest: "All", status: "All", rate: "All",
+    swkDest: "GDC", swkFcl: "All",
   };
 
   var root = document.getElementById("slgl-root");
@@ -181,18 +182,58 @@
     }).join("");
     return '<article class="panel"><div class="ph"><div><span>ORIGIN DASHBOARD REPLICA</span><h2>All Origins Bookings Status</h2></div></div><div class="tw"><table><thead><tr><th>Origin</th><th>Containers</th><th>Confirmed %</th><th>Departed %</th><th>Confirmed</th><th>Departed</th><th>Pending Space</th><th>Pending Depart</th><th>Avg CRD–ETD</th></tr></thead><tbody>' + body + "</tbody></table></div></article>";
   }
-  function gdcStatusByWeekHtml() {
-    var g = DATA.gdcStatusByWeek;
-    if (!g || !g.rows.length) return "";
-    var head = "<th>Status</th>" + g.weeks.map(function (w) { return "<th>" + esc(w) + "</th>"; }).join("") + "<th>Total</th>";
-    var body = g.rows.map(function (r) {
-      var cells = g.weeks.map(function (w) { return "<td>" + (r.counts[w] ? fmt(r.counts[w]) : "") + "</td>"; }).join("");
-      return "<tr><td><b>" + esc(r.status) + "</b></td>" + cells + "<td><b>" + fmt(r.total) + "</b></td></tr>";
+  function weekSortKey(wk) {
+    var parts = (wk || "").split(".");
+    var m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+    return (isNaN(m) ? 99 : m) * 100 + (isNaN(d) ? 99 : d);
+  }
+
+  // Client-side rebuild of the workbook's own "Ct CANs" pivot (Status rows x
+  // No Roll DC Wk columns), with slicers matching the pivot's own Filters
+  // area (FCL/LCL, DEST) so it can be sliced the same way in Excel.
+  // The source pivot's Status row field carries its own built-in filter
+  // (separate from the FCL/LCL and DEST slicers in its Filters area) that
+  // limits it to these 4 values - keep that fixed so the DEST/FCL slicers
+  // reproduce the same pivot rather than opening up every lifecycle status.
+  var STATUS_BY_WEEK_STATUSES = ["Delivered", "POD Available", "Arrived POD", "On Water"];
+
+  function statusByWeekHtml() {
+    var all = DATA.allContainers || [];
+    var destOptions = uniq(all.map(function (x) { return x.destination; }));
+    var fclOptions = uniq(all.map(function (x) { return x.fclLcl; }));
+    var rows = all.filter(function (x) {
+      return (state.swkDest === "All" || x.destination === state.swkDest) &&
+        (state.swkFcl === "All" || x.fclLcl === state.swkFcl) &&
+        STATUS_BY_WEEK_STATUSES.indexOf(x.status) >= 0;
+    });
+    var weeks = uniq(rows.map(function (x) { return x.dcWeek; }).filter(Boolean)).sort(function (a, b) { return weekSortKey(a) - weekSortKey(b); });
+    var statusOrder = STATUS_BY_WEEK_STATUSES.map(function (s) {
+      return { status: s, count: rows.filter(function (x) { return x.status === s; }).length };
+    }).filter(function (s) { return s.count > 0; });
+
+    var slicers = '<div class="filters">' +
+      selHtml("DEST", state.swkDest, destOptions, "swkDest") +
+      selHtml("FCL / LCL", state.swkFcl, fclOptions, "swkFcl") +
+      "</div>";
+
+    if (!statusOrder.length) {
+      return '<article class="panel weekly"><div class="ph"><div><span>SOURCE WORKBOOK PIVOT</span><h2>Status by week (No Roll DC Wk)</h2></div></div>' + slicers + '<p style="padding:0 18px 16px;color:var(--muted);font-size:12px;">No rows match this filter combination.</p></article>';
+    }
+
+    var head = "<th>Status</th>" + weeks.map(function (w) { return "<th>" + esc(w) + "</th>"; }).join("") + "<th>Total</th>";
+    var body = statusOrder.map(function (s) {
+      var cells = weeks.map(function (w) {
+        var n = rows.filter(function (x) { return x.status === s.status && x.dcWeek === w; }).length;
+        return "<td>" + (n ? fmt(n) : "") + "</td>";
+      }).join("");
+      return "<tr><td><b>" + esc(s.status) + "</b></td>" + cells + "<td><b>" + fmt(s.count) + "</b></td></tr>";
     }).join("");
+    var weekTotals = weeks.map(function (w) { return rows.filter(function (x) { return x.dcWeek === w; }).length; });
+    var grandTotal = rows.length;
     var totalRow = "<tr class=\"total\"><td><b>Total</b></td>" +
-      g.weeks.map(function (w) { return "<td>" + fmt(g.weekTotals[w] || 0) + "</td>"; }).join("") +
-      "<td><b>" + fmt(g.grandTotal) + "</b></td></tr>";
-    return '<article class="panel weekly"><div class="ph"><div><span>GDC DESTINATION · SOURCE WORKBOOK PIVOT</span><h2>GDC status by week (No Roll DC Wk)</h2></div></div><div class="tw"><table><thead><tr>' + head + "</tr></thead><tbody>" + body + totalRow + "</tbody></table></div></article>";
+      weekTotals.map(function (n) { return "<td>" + fmt(n) + "</td>"; }).join("") +
+      "<td><b>" + fmt(grandTotal) + "</b></td></tr>";
+    return '<article class="panel weekly"><div class="ph"><div><span>SOURCE WORKBOOK PIVOT</span><h2>Status by week (No Roll DC Wk)</h2></div></div>' + slicers + '<div class="tw"><table><thead><tr>' + head + "</tr></thead><tbody>" + body + totalRow + "</tbody></table></div></article>";
   }
 
   function originDetailTableHtml(rows) {
@@ -240,7 +281,7 @@
       body += '<div class="grid"><article class="panel"><div class="ph"><div><span>CONTAINER + UNIT VOLUME</span><h2>Inbound Status</h2></div></div>' + barsHtml(d.statMix) + '</article><article class="panel"><div class="ph"><div><span>NEXT ARRIVALS</span><h2>Arrival Port ETA</h2></div></div><div class="tw"><table><thead><tr><th>Container</th><th>Status</th><th>Origin</th><th>ETA</th><th>Units</th></tr></thead><tbody>' +
         nextArrivals.map(function (x) { return "<tr><td><b>" + esc(x.container) + "</b></td><td>" + pillHtml(x.shipmentStatus) + "</td><td>" + esc(x.origin) + "</td><td>" + dateFmt(x.arrivalEta) + "</td><td>" + fmt(x.cartons) + "</td></tr>"; }).join("") +
         "</tbody></table></div></article></div>";
-      body += gdcStatusByWeekHtml();
+      body += statusByWeekHtml();
     } else if (tab === "Origin") {
       body += filtersHtml(d);
       body += '<div class="originCards">' + d.orows.map(function (x) {
