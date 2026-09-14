@@ -323,29 +323,30 @@ def build_can_rows(all_containers, asof_year):
 # Port status by day
 # ---------------------------------------------------------------------------
 
-# "At port" = the 4 destination-port statuses already used for the AT PORT
-# KPI elsewhere in the dashboard (app.js computeDerived()). Keep in sync.
-AT_PORT_STATUSES = {"POD Available", "POD Outgate", "POD Discharge", "Arrived POD"}
+# "At port" = the granular Shipment Status value "At Arrival Port". This is
+# more reliable than the column-A "Status" helper field, which can lag (some
+# containers are labeled "Delivered" in Status while Shipment Status still
+# correctly shows them sitting At Arrival Port, not yet actually delivered).
+AT_PORT_SHIPMENT_STATUSES = {"At Arrival Port"}
 
 
 def build_port_containers(active_containers, asof):
     """
     Lists containers currently sitting at the destination port (per
-    AT_PORT_STATUSES) with how many days each has been sitting there since
-    its arrival-PORT date (Arrival Port Actual Arrival Date if known, else
-    Arrival Port Estimated Arrival Date), sorted with the longest-dwelling
-    container first.
+    AT_PORT_SHIPMENT_STATUSES, using the granular Shipment Status field) with
+    how many days each has been sitting there since its arrival-PORT date
+    (Arrival Port Actual Arrival Date if known, else Arrival Port Estimated
+    Arrival Date), sorted with the longest-dwelling container first.
 
-    Takes activeContainers (shipmentStatusType == "Active"), the same
-    population the Summary/Inbound Status "AT PORT" KPI is built from, so
-    the total container count here matches that KPI. "Days since arrival"
-    is measured against the workbook's asOf date, not the viewer's clock
-    date, so it stays correct even if someone looks at an older snapshot.
+    Takes activeContainers (shipmentStatusType == "Active"). "Days since
+    arrival" is measured against the workbook's asOf date, not the viewer's
+    clock date, so it stays correct even if someone looks at an older
+    snapshot.
     """
     asof_date = datetime.strptime(asof, "%Y-%m-%d")
     out = []
     for c in active_containers:
-        if c["status"] not in AT_PORT_STATUSES:
+        if c["shipmentStatus"] not in AT_PORT_SHIPMENT_STATUSES:
             continue
         arrival = c["arrivalAta"] or c["arrivalEta"]
         days_at_port = None
@@ -354,7 +355,7 @@ def build_port_containers(active_containers, asof):
         out.append({
             "container": c["container"],
             "origin": c["origin"],
-            "status": c["status"],
+            "status": c["shipmentStatus"],
             "arrivalDate": arrival[:10] if arrival else None,
             "arrivalIsEstimate": not c["arrivalAta"],
             "daysAtPort": days_at_port,
